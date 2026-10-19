@@ -1,61 +1,294 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-  <title>CPT</title>
-  <style>
-    body{
-      margin: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 90vh;
-    }
-    .container{
-      background-color: pink;
-      padding: 1rem;
-      border-radius: 10px;
-    }
-    .btn{
-      padding: 0.5rem 2rem;
-      border: none;
-      outline: none;
-      font-weight: bold;
-      border-radius: 10px;
-    }
-    .btnPrimary{
-      color: white;
-      background-color: red;
-    }
-    .btnSecondary{
-      color: white;
-      background-color: blue;
-      padding: 0.5rem 1rem;
-    }
-    .moving{
-      margin-left: 250px;
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Audiobook player (standalone)</title>
+<style>
+:root{color-scheme:dark;--panel:rgba(12,14,17,.88);--fg:#ece9e0;--line:rgba(255,255,255,.2);--accent:#5fb3a8;--sub-fg:#f8f5ec;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:#000;color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#app{position:relative;height:100%;width:100%;overflow:hidden;background:#000;-webkit-tap-highlight-color:transparent}
+#bgv,#bgi{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
+#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 24px 120px;text-align:center;color:#cfcabd;font-size:16px;line-height:1.5}
+#sub{position:absolute;left:0;right:0;bottom:0;padding:40px 5% 18px;text-align:center;font-family:Georgia,"Times New Roman",serif;font-size:clamp(20px,4.8vw,34px);line-height:1.45;color:var(--sub-fg);background:linear-gradient(transparent,rgba(0,0,0,.6));white-space:pre-line;text-shadow:0 1px 4px #000;transition:bottom .25s;pointer-events:none}
+#panel{position:absolute;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:10px 12px 12px;transform:translateY(105%);transition:transform .25s}
+#app.ui #panel{transform:none}
+#title{font-size:14px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
+.row{display:flex;align-items:center;gap:8px}
+#seek{flex:1;accent-color:var(--accent);height:30px}
+.t{font-variant-numeric:tabular-nums;font-size:13px;min-width:44px}
+.t.r{text-align:right}
+button,select,label.btn,summary{font:inherit;font-size:14px;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:10px;padding:8px 11px;min-height:42px;cursor:pointer}
+button:focus-visible,select:focus-visible,label.btn:focus-within,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#play{background:var(--accent);color:#06201c;border-color:var(--accent);font-weight:600;min-width:80px}
+#ctl{justify-content:space-between;margin-top:4px}
+.wrap{margin-top:8px;flex-wrap:wrap}
+label.btn{display:inline-flex;align-items:center}
+label.btn input{position:absolute;opacity:0;width:1px;height:1px}
+details{margin-top:8px}
+summary{display:inline-flex;align-items:center;list-style:none}
+summary::-webkit-details-marker{display:none}
+#bt{width:100%;margin-top:8px;min-height:64px;background:rgba(255,255,255,.06);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace}
+#note{font-size:12px;opacity:.75;margin-top:6px;min-height:16px}
+</style>
 </head>
-
 <body>
-  <section class="container">
-    <h2 class="text">Are you Gay? :)</h2>
-    <button class="btn btnPrimary">Yes :)</button>
-    <button class="btn btnSecondary">No :(</button>
-  </section>
-  <script>
-    const btnAgree = document.querySelector(".btnPrimary");
-    const btnDisagree = document.querySelector(".btnSecondary");
-    const text = document.querySelector(".text");
-    
-    btnAgree.addEventListener("click", ()=>{
-      text.innerText = "haha you gay XD";
-    });
-    btnDisagree.addEventListener("mouseover", ()=>{
-      btnDisagree.classList.toggle("moving");
-    });
-  </script>
-</body>
+<div id="app" class="ui">
+  <video id="bgv" muted playsinline></video>
+  <img id="bgi" alt="">
+  <div id="empty">Tap the buttons below to add audio, subtitles and backgrounds. Tap the screen to hide or show the controls.</div>
+  <div id="sub"></div>
+  <div id="panel">
+    <div id="title">No audio loaded</div>
+    <div class="row">
+      <span class="t" id="cur">0:00</span>
+      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+      <span class="t r" id="dur">0:00</span>
+    </div>
+    <div class="row" id="ctl">
+      <button id="prev" aria-label="Previous file">Prev</button>
+      <button id="back" aria-label="Back 15 seconds">−15s</button>
+      <button id="play">Play</button>
+      <button id="fwd" aria-label="Forward 15 seconds">+15s</button>
+      <button id="next" aria-label="Next file">Next</button>
+    </div>
+    <div class="row wrap">
+      <label class="btn">Audio<input id="fa" type="file" multiple></label>
+      <label class="btn">Subtitles<input id="fs" type="file"></label>
+      <label class="btn">Backgrounds<input id="fb" type="file" multiple></label>
+      <button id="clr">Clear backgrounds</button>
+      <select id="spd" aria-label="Speed">
+        <option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option><option>1.75</option><option>2</option><option>2.5</option><option>3</option><option>3.5</option><option>4</option>
+      </select>
+      <button id="full">Full screen</button>
+    </div>
+    <div class="row wrap">
+      <button id="exp">Export backup</button>
+      <label class="btn">Import backup<input id="imp" type="file"></label>
+      <button id="pst">Paste backup</button>
+      <button id="impt" style="display:none">Restore from text</button>
+    </div>
+    <textarea id="bt" spellcheck="false" placeholder="Paste a backup here, then tap Restore from text." style="display:none"></textarea>
+    <div id="note"></div>
+  </div>
+</div>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var app=$("app"),panel=$("panel"),sub=$("sub"),empty=$("empty"),bgv=$("bgv"),bgi=$("bgi");
+var audio=new Audio();audio.preservesPitch=true;audio.preload="auto";
+bgv.muted=true;bgv.volume=0;
+var playlist=[],idx=0,cues=[],cueI=-1,bgs=[],bag=[],lastBg=-1,imgTimer=null,lastSave=0,hideT=null,wl=null;
+var IMG_MS=20000;
 
+function fmt(s){s=Math.max(0,Math.floor(s||0));var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return (h?h+":"+String(m).padStart(2,"0"):m)+":"+String(x).padStart(2,"0")}
+function place(){sub.style.bottom=app.classList.contains("ui")?panel.offsetHeight+"px":"0px"}
+function note(t){$("note").textContent=t||"";place()}
+function key(f){return "pos:"+f.name+":"+f.size}
+function store(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function load(k){try{return localStorage.getItem(k)}catch(e){return null}}
+
+/* controls show/hide, like a video player */
+function showUI(){
+  app.classList.add("ui");place();clearTimeout(hideT);
+  if(!audio.paused)hideT=setTimeout(function(){hideUI()},4500);
+}
+function hideUI(){app.classList.remove("ui");place()}
+app.addEventListener("click",function(e){
+  if(panel.contains(e.target))return;
+  app.classList.contains("ui")?(clearTimeout(hideT),hideUI()):showUI();
+});
+panel.addEventListener("pointerdown",showUI);
+panel.addEventListener("input",showUI);
+window.addEventListener("resize",place);
+
+/* audio */
+function setTrack(i,autoplay){
+  if(!playlist.length)return;
+  idx=(i+playlist.length)%playlist.length;
+  var f=playlist[idx];
+  if(audio.src)URL.revokeObjectURL(audio.src);
+  audio.src=URL.createObjectURL(f);
+  audio.playbackRate=parseFloat($("spd").value);
+  $("title").textContent=f.name+(playlist.length>1?"  ("+(idx+1)+"/"+playlist.length+")":"");
+  var saved=parseFloat(load(key(f)));
+  audio.onloadedmetadata=function(){
+    if(saved>0&&saved<audio.duration-3){audio.currentTime=saved;note("Resumed at "+fmt(saved))}else note("");
+    $("dur").textContent=fmt(audio.duration);
+    audio.playbackRate=parseFloat($("spd").value);
+  };
+  cueI=-1;sub.textContent="";
+  if("mediaSession" in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:f.name})}catch(e){}}
+  if(autoplay)audio.play().catch(function(){});
+}
+$("fa").onchange=function(e){
+  playlist=Array.prototype.slice.call(e.target.files).filter(function(f){return (f.type||"").indexOf("audio")===0||/\.(opus|ogg|mp3|m4a|aac|wav|flac|wma|webm)$/i.test(f.name)}).sort(function(a,b){return a.name.localeCompare(b.name,undefined,{numeric:true})});
+  if(playlist.length)setTrack(0,false);
+  empty.style.display="none";
+};
+audio.onended=function(){if(idx<playlist.length-1)setTrack(idx+1,true);else syncUI()};
+$("play").onclick=function(){if(!audio.src)return;audio.paused?audio.play().catch(function(){}):audio.pause()};
+$("back").onclick=function(){audio.currentTime=Math.max(0,audio.currentTime-15)};
+$("fwd").onclick=function(){audio.currentTime=Math.min(audio.duration||1e9,audio.currentTime+15)};
+$("prev").onclick=function(){setTrack(idx-1,!audio.paused)};
+$("next").onclick=function(){setTrack(idx+1,!audio.paused)};
+$("spd").onchange=function(){audio.playbackRate=parseFloat(this.value);store("speed",this.value)};
+var sp=load("speed");if(sp){$("spd").value=sp}
+$("seek").oninput=function(){if(audio.duration)audio.currentTime=this.value/1000*audio.duration};
+function syncUI(){$("play").textContent=audio.paused?"Play":"Pause"}
+audio.onplay=function(){syncUI();bgPlay(true);wake(true);showUI()};
+audio.onpause=function(){syncUI();bgPlay(false);wake(false);save();showUI()};
+function save(){if(playlist[idx]&&audio.currentTime>0)store(key(playlist[idx]),audio.currentTime)}
+if("mediaSession" in navigator){
+  try{
+    navigator.mediaSession.setActionHandler("play",function(){audio.play()});
+    navigator.mediaSession.setActionHandler("pause",function(){audio.pause()});
+    navigator.mediaSession.setActionHandler("seekbackward",function(){$("back").click()});
+    navigator.mediaSession.setActionHandler("seekforward",function(){$("fwd").click()});
+    navigator.mediaSession.setActionHandler("nexttrack",function(){$("next").click()});
+    navigator.mediaSession.setActionHandler("previoustrack",function(){$("prev").click()});
+  }catch(e){}
+}
+
+/* keep the screen on while playing */
+function wake(on){
+  try{
+    if(on&&navigator.wakeLock&&!wl){navigator.wakeLock.request("screen").then(function(l){wl=l;l.onrelease=function(){wl=null}}).catch(function(){})}
+    else if(!on&&wl){wl.release();wl=null}
+  }catch(e){}
+}
+
+/* full screen */
+$("full").onclick=function(){
+  if(document.fullscreenElement){document.exitFullscreen();return}
+  var el=document.documentElement;
+  if(!el.requestFullscreen){note("Full screen isn’t available here. Controls still hide so the picture fills the screen.");return}
+  el.requestFullscreen().then(function(){hideUI()}).catch(function(){note("Full screen is blocked here. Controls still hide so the picture fills the screen.")});
+};
+document.addEventListener("fullscreenchange",function(){$("full").textContent=document.fullscreenElement?"Exit full screen":"Full screen";place()});
+
+/* subtitles */
+function toSec(t){var m=t.trim().replace(",",".").match(/(\d+):(\d+):(\d+(?:\.\d+)?)/);return m?(+m[1])*3600+(+m[2])*60+parseFloat(m[3]):0}
+function parseSrt(txt){
+  var out=[];txt=txt.replace(/\r/g,"").replace(/^\uFEFF/,"");
+  txt.split(/\n\s*\n/).forEach(function(b){
+    var L=b.split("\n").filter(function(x){return x.length});
+    var ti=L.findIndex(function(x){return x.indexOf("-->")>-1});
+    if(ti<0)return;
+    var p=L[ti].split("-->");
+    out.push({s:toSec(p[0]),e:toSec(p[1]),t:L.slice(ti+1).join("\n").replace(/<[^>]+>/g,"")});
+  });
+  return out.sort(function(a,b){return a.s-b.s});
+}
+$("fs").onchange=function(e){
+  var f=e.target.files[0];if(!f)return;
+  f.text().then(function(t){cues=parseSrt(t);cueI=-1;note(cues.length+" subtitle lines loaded");empty.style.display="none"});
+};
+function showCue(t){
+  var lo=0,hi=cues.length-1,f=-1;
+  while(lo<=hi){var m=(lo+hi)>>1;if(cues[m].s<=t){f=m;lo=m+1}else hi=m-1}
+  var txt=(f>=0&&t<=cues[f].e)?cues[f].t:"";
+  if(f!==cueI||!txt){cueI=f;sub.textContent=txt}
+}
+
+/* backgrounds: shuffle bag. Every item plays once before any repeats, and a
+   new round never starts with the item that just played. Video sound is muted. */
+function refill(){
+  bag=bgs.map(function(_,i){return i});
+  for(var i=bag.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var x=bag[i];bag[i]=bag[j];bag[j]=x}
+  var n=bag.length;
+  if(n>1&&bag[n-1]===lastBg){var y=bag[0];bag[0]=bag[n-1];bag[n-1]=y}
+}
+function nextBg(){
+  if(!bgs.length)return;
+  if(!bag.length)refill();
+  lastBg=bag.pop();
+  var it=bgs[lastBg];
+  clearTimeout(imgTimer);
+  if(it.video){
+    bgi.style.display="none";bgv.style.display="block";
+    bgv.muted=true;bgv.volume=0;bgv.loop=bgs.length===1;
+    bgv.src=it.url;
+    if(!audio.paused)bgv.play().catch(function(){});
+  }else{
+    bgv.pause();bgv.style.display="none";bgi.style.display="block";bgi.src=it.url;
+    if(bgs.length>1)imgTimer=setTimeout(function(){if(!audio.paused)nextBg()},IMG_MS);
+  }
+}
+bgv.onended=nextBg;
+bgv.onerror=function(){if(bgs.length>1)nextBg()};
+function bgPlay(on){
+  if(on){
+    if(bgv.style.display==="block")bgv.play().catch(function(){});
+    if(bgi.style.display==="block"&&bgs.length>1){clearTimeout(imgTimer);imgTimer=setTimeout(nextBg,IMG_MS)}
+  }else{bgv.pause();clearTimeout(imgTimer)}
+}
+$("fb").onchange=function(e){
+  var added=Array.prototype.slice.call(e.target.files).filter(function(f){return /^(video|image)\//.test(f.type||"")||/\.(mp4|webm|mov|mkv|gif|webp|png|jpe?g|avif|bmp)$/i.test(f.name)}).map(function(f){
+    return {video:(f.type||"").indexOf("video")===0||/\.(mp4|webm|mov|mkv)$/i.test(f.name),url:URL.createObjectURL(f)};
+  });
+  e.target.value="";
+  if(!added.length){note("No pictures or videos in that selection");return}
+  var first=!bgs.length;
+  bgs=bgs.concat(added);
+  if(first)bag=[];
+  else{
+    for(var i=bgs.length-added.length;i<bgs.length;i++)bag.push(i);
+    for(var k=bag.length-1;k>0;k--){var j=Math.floor(Math.random()*(k+1));var x=bag[k];bag[k]=bag[j];bag[j]=x}
+  }
+  empty.style.display="none";
+  if(first)nextBg();
+  note(bgs.length+" backgrounds loaded. Add more any time.");
+};
+$("clr").onclick=function(){
+  bgs.forEach(function(b){URL.revokeObjectURL(b.url)});
+  bgs=[];bag=[];lastBg=-1;clearTimeout(imgTimer);
+  bgv.pause();bgv.removeAttribute("src");bgv.load();bgv.style.display="none";bgi.style.display="none";bgi.removeAttribute("src");
+  note("Backgrounds cleared");
+};
+
+/* backup of saved positions */
+function allPos(){var o={};try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k.indexOf("pos:")===0)o[k]=parseFloat(localStorage.getItem(k))}}catch(e){}return o}
+function restore(t){
+  try{
+    var d=JSON.parse(t),p=d&&d.positions,c=0;
+    if(!p||typeof p!=="object")throw 0;
+    Object.keys(p).forEach(function(k){if(k.indexOf("pos:")===0&&isFinite(p[k])){store(k,String(p[k]));c++}});
+    if(d.speed){$("spd").value=String(d.speed);if($("spd").value===String(d.speed)){store("speed",String(d.speed));audio.playbackRate=parseFloat(d.speed)}}
+    if(playlist[idx]&&audio.duration){var s=parseFloat(load(key(playlist[idx])));if(s>0)audio.currentTime=s}
+    note("Restored "+c+" saved positions. Reopen your audio files to resume.");
+  }catch(e){note("That isn’t a valid backup")}
+}
+$("exp").onclick=async function(){
+  save();
+  var pos=allPos(),n=Object.keys(pos).length;
+  if(!n){note("Nothing to back up yet. Play something first.");return}
+  var json=JSON.stringify({app:"audiobook-player",version:1,speed:load("speed"),positions:pos});
+  var D=new Date(),p2=function(x){return String(x).padStart(2,"0")};
+  var FN="audiobook-backup-"+D.getFullYear()+"-"+p2(D.getMonth()+1)+"-"+p2(D.getDate())+"_"+p2(D.getHours())+"-"+p2(D.getMinutes())+".json";
+  var blob=new Blob([json],{type:"application/json"}),u=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=u;a.download=FN;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(u)},5000);
+  note("Backup downloaded ("+n+" files). Check your Downloads folder.");
+};
+$("pst").onclick=function(){var b=$("bt");b.style.display="block";b.value="";b.focus();$("impt").style.display="inline-flex";note("Paste your backup in the box, then tap Restore from text.")};
+$("impt").onclick=function(){restore($("bt").value)};
+$("imp").onchange=function(e){var f=e.target.files[0];e.target.value="";if(f)f.text().then(restore)};
+
+/* time updates */
+audio.ontimeupdate=function(){
+  var t=audio.currentTime;
+  $("cur").textContent=fmt(t);
+  if(audio.duration)$("seek").value=t/audio.duration*1000;
+  showCue(t);
+  var n=Date.now();if(n-lastSave>3000){lastSave=n;save()}
+};
+window.addEventListener("pagehide",save);
+document.addEventListener("visibilitychange",function(){if(document.hidden)save();else if(!audio.paused)wake(true)});
+place();
+})();
+</script>
+</body>
 </html>
