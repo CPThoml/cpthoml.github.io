@@ -288,6 +288,9 @@ audio.ontimeupdate=function(){
 window.addEventListener("pagehide",save);
 document.addEventListener("visibilitychange",function(){if(document.hidden)save();else if(!audio.paused)wake(true)});
 place();
+/* keep a copy of this page for offline use, and ask the browser not to evict site data */
+try{if("serviceWorker" in navigator&&location.protocol.indexOf("http")===0)navigator.serviceWorker.register("sw.js").catch(function(){})}catch(e){}
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(function(){})}catch(e){}
 })();
 </script>
 </body>
