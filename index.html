@@ -58,7 +58,6 @@ summary::-webkit-details-marker{display:none}
       <label class="btn">Subtitles<input id="fs" type="file"></label>
       <label class="btn">Backgrounds<input id="fb" type="file" multiple></label>
       <button id="clr">Clear backgrounds</button>
-      <button id="resub" title="Recalculate the subtitle shown at the current audio time">Refresh subtitles</button>
       <select id="spd" aria-label="Speed">
         <option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option><option>1.75</option><option>2</option><option>2.5</option><option>3</option><option>3.5</option><option>4</option>
       </select>
@@ -81,7 +80,7 @@ var app=$("app"),panel=$("panel"),sub=$("sub"),empty=$("empty"),bgv=$("bgv"),bgi
 var audio=new Audio();audio.preservesPitch=true;audio.preload="auto";
 bgv.muted=true;bgv.volume=0;
 var playlist=[],idx=0,cues=[],cueI=-1,bgs=[],bag=[],lastBg=-1,imgTimer=null,lastSave=0,hideT=null,wl=null;
-var IMG_MS=20000,subtitleFrame=0;
+var IMG_MS=20000;
 
 function fmt(s){s=Math.max(0,Math.floor(s||0));var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
   return (h?h+":"+String(m).padStart(2,"0"):m)+":"+String(x).padStart(2,"0")}
@@ -139,11 +138,8 @@ $("spd").onchange=function(){audio.playbackRate=parseFloat(this.value);store("sp
 var sp=load("speed");if(sp){$("spd").value=sp}
 $("seek").oninput=function(){if(audio.duration)audio.currentTime=this.value/1000*audio.duration};
 function syncUI(){$("play").textContent=audio.paused?"Play":"Pause"}
-audio.onplay=function(){syncUI();bgPlay(true);wake(true);showUI();refreshSubtitles();runSubtitleFrame()};
-audio.onpause=function(){syncUI();bgPlay(false);wake(false);save();showUI();refreshSubtitles();cancelAnimationFrame(subtitleFrame);subtitleFrame=0};
-audio.addEventListener("seeked",refreshSubtitles);
-audio.addEventListener("loadedmetadata",refreshSubtitles);
-audio.addEventListener("ratechange",refreshSubtitles);
+audio.onplay=function(){syncUI();bgPlay(true);wake(true);showUI()};
+audio.onpause=function(){syncUI();bgPlay(false);wake(false);save();showUI()};
 function save(){if(playlist[idx]&&audio.currentTime>0)store(key(playlist[idx]),audio.currentTime)}
 if("mediaSession" in navigator){
   try{
@@ -172,157 +168,6 @@ $("full").onclick=function(){
   el.requestFullscreen().then(function(){hideUI()}).catch(function(){note("Full screen is blocked here. Controls still hide so the picture fills the screen.")});
 };
 document.addEventListener("fullscreenchange",function(){$("full").textContent=document.fullscreenElement?"Exit full screen":"Full screen";place()});
-
-/* subtitles */
-function toSec(t){var m=t.trim().replace(",",".").match(/(\d+):(\d+):(\d+(?:\.\d+)?)/);return m?(+m[1])*3600+(+m[2])*60+parseFloat(m[3]):0}
-function parseSrt(txt){
-  var out=[];txt=txt.replace(/\r/g,"").replace(/^\uFEFF/,"");
-  txt.split(/\n\s*\n/).forEach(function(b){
-    var L=b.split("\n").filter(function(x){return x.length});
-    var ti=L.findIndex(function(x){return x.indexOf("-->")>-1});
-    if(ti<0)return;
-    var p=L[ti].split("-->");
-    out.push({s:toSec(p[0]),e:toSec(p[1]),t:L.slice(ti+1).join("\n").replace(/<[^>]+>/g,"")});
-  });
-  return out.sort(function(a,b){return a.s-b.s});
-}
-$("fs").onchange=function(e){
-  var f=e.target.files[0];if(!f)return;
-  f.text().then(function(t){cues=parseSrt(t);cueI=-1;note(cues.length+" subtitle lines loaded");empty.style.display="none"});
-};
-function showCue(t,force){
-  var lo=0,hi=cues.length-1,f=-1;
-  while(lo<=hi){var m=(lo+hi)>>1;if(cues[m].s<=t){f=m;lo=m+1}else hi=m-1}
-  var txt=(f>=0&&t<=cues[f].e)?cues[f].t:"";
-  if(force||f!==cueI||sub.textContent!==txt){cueI=f;sub.textContent=txt}
-}
-/* Always derive the subtitle from the audio element's real playback position.
-   Browsers throttle timeupdate/rendering in background tabs, especially at high
-   playback rates, so refresh immediately when the page becomes active again. */
-function refreshSubtitles(){
-  cueI=-1;
-  showCue(audio.currentTime||0,true);
-}
-function runSubtitleFrame(){
-  if(subtitleFrame)return;
-  function tick(){
-    subtitleFrame=0;
-    if(audio.paused||audio.ended)return;
-    showCue(audio.currentTime||0,false);
-    subtitleFrame=requestAnimationFrame(tick);
-  }
-  subtitleFrame=requestAnimationFrame(tick);
-}
-$("resub").onclick=function(){refreshSubtitles();note("Subtitles refreshed at "+fmt(audio.currentTime||0))};
-
-/* backgrounds: shuffle bag. Every item plays once before any repeats, and a
-   new round never starts with the item that just played. Video sound is muted. */
-function refill(){
-  bag=bgs.map(function(_,i){return i});
-  for(var i=bag.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var x=bag[i];bag[i]=bag[j];bag[j]=x}
-  var n=bag.length;
-  if(n>1&&bag[n-1]===lastBg){var y=bag[0];bag[0]=bag[n-1];bag[n-1]=y}
-}
-function nextBg(){
-  if(!bgs.length)return;
-  if(!bag.length)refill();
-  lastBg=bag.pop();
-  var it=bgs[lastBg];
-  clearTimeout(imgTimer);
-  if(it.video){
-    bgi.style.display="none";bgv.style.display="block";
-    bgv.muted=true;bgv.volume=0;bgv.loop=bgs.length===1;
-    bgv.src=it.url;
-    if(!audio.paused)bgv.play().catch(function(){});
-  }else{
-    bgv.pause();bgv.style.display="none";bgi.style.display="block";bgi.src=it.url;
-    if(bgs.length>1)imgTimer=setTimeout(function(){if(!audio.paused)nextBg()},IMG_MS);
-  }
-}
-bgv.onended=nextBg;
-bgv.onerror=function(){if(bgs.length>1)nextBg()};
-function bgPlay(on){
-  if(on){
-    if(bgv.style.display==="block")bgv.play().catch(function(){});
-    if(bgi.style.display==="block"&&bgs.length>1){clearTimeout(imgTimer);imgTimer=setTimeout(nextBg,IMG_MS)}
-  }else{bgv.pause();clearTimeout(imgTimer)}
-}
-$("fb").onchange=function(e){
-  var added=Array.prototype.slice.call(e.target.files).filter(function(f){return /^(video|image)\//.test(f.type||"")||/\.(mp4|webm|mov|mkv|gif|webp|png|jpe?g|avif|bmp)$/i.test(f.name)}).map(function(f){
-    return {video:(f.type||"").indexOf("video")===0||/\.(mp4|webm|mov|mkv)$/i.test(f.name),url:URL.createObjectURL(f)};
-  });
-  e.target.value="";
-  if(!added.length){note("No pictures or videos in that selection");return}
-  var first=!bgs.length;
-  bgs=bgs.concat(added);
-  if(first)bag=[];
-  else{
-    for(var i=bgs.length-added.length;i<bgs.length;i++)bag.push(i);
-    for(var k=bag.length-1;k>0;k--){var j=Math.floor(Math.random()*(k+1));var x=bag[k];bag[k]=bag[j];bag[j]=x}
-  }
-  empty.style.display="none";
-  if(first)nextBg();
-  note(bgs.length+" backgrounds loaded. Add more any time.");
-};
-$("clr").onclick=function(){
-  bgs.forEach(function(b){URL.revokeObjectURL(b.url)});
-  bgs=[];bag=[];lastBg=-1;clearTimeout(imgTimer);
-  bgv.pause();bgv.removeAttribute("src");bgv.load();bgv.style.display="none";bgi.style.display="none";bgi.removeAttribute("src");
-  note("Backgrounds cleared");
-};
-
-/* backup of saved positions */
-function allPos(){var o={};try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k.indexOf("pos:")===0)o[k]=parseFloat(localStorage.getItem(k))}}catch(e){}return o}
-function restore(t){
-  try{
-    var d=JSON.parse(t),p=d&&d.positions,c=0;
-    if(!p||typeof p!=="object")throw 0;
-    Object.keys(p).forEach(function(k){if(k.indexOf("pos:")===0&&isFinite(p[k])){store(k,String(p[k]));c++}});
-    if(d.speed){$("spd").value=String(d.speed);if($("spd").value===String(d.speed)){store("speed",String(d.speed));audio.playbackRate=parseFloat(d.speed)}}
-    if(playlist[idx]&&audio.duration){var s=parseFloat(load(key(playlist[idx])));if(s>0)audio.currentTime=s}
-    note("Restored "+c+" saved positions. Reopen your audio files to resume.");
-  }catch(e){note("That isn’t a valid backup")}
-}
-$("exp").onclick=async function(){
-  save();
-  var pos=allPos(),n=Object.keys(pos).length;
-  if(!n){note("Nothing to back up yet. Play something first.");return}
-  var json=JSON.stringify({app:"audiobook-player",version:1,speed:load("speed"),positions:pos});
-  var D=new Date(),p2=function(x){return String(x).padStart(2,"0")};
-  var FN="audiobook-backup-"+D.getFullYear()+"-"+p2(D.getMonth()+1)+"-"+p2(D.getDate())+"_"+p2(D.getHours())+"-"+p2(D.getMinutes())+".json";
-  var blob=new Blob([json],{type:"application/json"}),u=URL.createObjectURL(blob),a=document.createElement("a");
-  a.href=u;a.download=FN;document.body.appendChild(a);a.click();a.remove();
-  setTimeout(function(){URL.revokeObjectURL(u)},5000);
-  note("Backup downloaded ("+n+" files). Check your Downloads folder.");
-};
-$("pst").onclick=function(){var b=$("bt");b.style.display="block";b.value="";b.focus();$("impt").style.display="inline-flex";note("Paste your backup in the box, then tap Restore from text.")};
-$("impt").onclick=function(){restore($("bt").value)};
-$("imp").onchange=function(e){var f=e.target.files[0];e.target.value="";if(f)f.text().then(restore)};
-
-/* time updates */
-audio.ontimeupdate=function(){
-  var t=audio.currentTime;
-  $("cur").textContent=fmt(t);
-  if(audio.duration)$("seek").value=t/audio.duration*1000;
-  showCue(t);
-  var n=Date.now();if(n-lastSave>3000){lastSave=n;save()}
-};
-window.addEventListener("pagehide",save);
-document.addEventListener("visibilitychange",function(){
-  if(document.hidden){save();}
-  else{refreshSubtitles();if(!audio.paused){wake(true);runSubtitleFrame()}}
-});
-window.addEventListener("focus",refreshSubtitles);
-window.addEventListener("pageshow",refreshSubtitles);
-place();
-/* keep a copy of this page for offline use, and ask the browser not to evict site data */
-try{if("serviceWorker" in navigator&&location.protocol.indexOf("http")===0)navigator.serviceWorker.register("sw.js").catch(function(){})}catch(e){}
-try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(function(){})}catch(e){}
-})();
-</script>
-</body>
-</html>
-"Full screen";place()});
 
 /* subtitles */
 function toSec(t){var m=t.trim().replace(",",".").match(/(\d+):(\d+):(\d+(?:\.\d+)?)/);return m?(+m[1])*3600+(+m[2])*60+parseFloat(m[3]):0}
